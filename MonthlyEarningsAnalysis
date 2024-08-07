@@ -1,0 +1,107 @@
+rm(list = ls())
+
+library(tidyverse)
+library(sandwich)
+library(WDI)
+library(modelsummary)
+
+kenya_data <- read.csv("https://raw.githubusercontent.com/mkevane/econ42/main/kenya_earnings.csv")
+
+datasummary((`Years of education` = educ_yrs) +
+              (`Age` = age) +
+              (`Experience` = exper) +
+              (`Female` = female) +
+              (`Rural` = rural) +
+              (`Earnings in USD` = earnings_usd) + 
+              (`Mainstream Christian` = christian_main) + 
+              (`Evangelical Christian` = christian_evang) + 
+              (`Muslim` = muslim) + 
+              (`Kikuyu` = kikuyu) ~ 
+              (Mean + SD),
+            sparse_header = FALSE,
+            data = kenya_data,
+            title = "Table of Descriptive Statistics")
+
+ggplot(data = kenya_data, aes(x = educ_yrs, y = earnings_usd)) +
+  geom_point(shape = 0)+ labs(title = "Impact of Education on Earnings") +
+  labs(x = "Education", y = "Log Earnings (USD)") + scale_y_log10()
+
+ggplot(data = kenya_data, aes(x = educ_yrs, y = earnings_usd)) +
+  stat_summary(fun = mean, geom = "bar", fill = "lightblue") +
+  labs(title = "Average Earnings by Education Level", x = "Years of Education", y = "Average Earnings (USD)")
+
+ggplot(data = kenya_data, aes(x = exper, y = earnings_usd)) +
+  geom_point(shape = 0)+ labs(title = "Impact of Experience on Log Earnings") +
+  labs(x = "Experience", y = "Log Earnings (USD)") + scale_y_log10()
+
+ggplot(data = kenya_data, aes(x = factor(female), y = earnings_usd)) +
+  geom_boxplot() +
+  labs(title = "Earnings Distribution by Gender", x = "Gender (0 = Male, 1 = Female)", y = "Log Earnings (USD)") + 
+  scale_y_log10()
+
+ggplot(data = kenya_data, aes(x = factor(rural), y = earnings_usd)) +
+  geom_boxplot() +
+  labs(title = "Earnings Distribution by Rural/Urban Classification", 
+       x = "Rural (0 = Urban, 1 = Rural)", 
+       y = "Log Earnings (USD)") + 
+      scale_y_log10()
+
+kenya_data_long <- kenya_data %>%
+  pivot_longer(cols = c(christian_main, christian_evang, muslim, kikuyu), 
+               names_to = "religion", 
+               values_to = "is_member") %>%
+  filter(is_member == 1)
+
+average_earnings_by_religion <- kenya_data_long %>%
+  group_by(religion) %>%
+  summarize(average_earnings = mean(earnings_usd, na.rm = TRUE))
+
+custom_labels <- c(
+  "christian_main" = "Mainstream Christian",
+  "christian_evang" = "Evangelical Christian",
+  "muslim" = "Muslim",
+  "kikuyu" = "Kikuyu"
+)
+
+ggplot(average_earnings_by_religion, aes(x = religion, y = average_earnings, fill = religion)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Average Earnings by Religious Group",
+       x = NULL, 
+       y = "Average Earnings (USD)", 
+       fill = "Religious Group") +
+  scale_fill_manual(values = c("christian_main" = "lightblue", 
+                               "christian_evang" = "lightgreen", 
+                               "muslim" = "lightpink", 
+                               "kikuyu" = "lightcoral"),
+                    labels = custom_labels) +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(), 
+        axis.ticks.x = element_blank(), 
+        legend.title = element_text(size = 10), 
+        legend.text = element_text(size = 8))
+
+reg1 <- lm(earnings_usd ~ educ_yrs + exper + female, data = kenya_data)
+reg2 <- lm(earnings_usd ~ educ_yrs + I(educ_yrs^2) + exper + I(exper^2) + female, data = kenya_data)
+reg3 <- lm(earnings_usd ~ educ_yrs + I(educ_yrs^2) + exper + I(exper^2) + female + 
+             educ_yrs * female, data = kenya_data)
+reg4 <- lm(earnings_usd ~ educ_yrs + I(educ_yrs^2) + exper + I(exper^2) + female + 
+             rural + educ_yrs * female, data = kenya_data)
+reg5 <- lm(earnings_usd ~ educ_yrs + I(educ_yrs^2) + exper + I(exper^2) + female + 
+             rural + christian_main + christian_evang + muslim + kikuyu + 
+             educ_yrs * female, data = kenya_data)
+
+models = list(reg1, reg2, reg3)
+modelsummary(models,
+             fmt = fmt_decimal(digits = 3, pdigits = 3),
+             stars = T,
+             vcov = "robust",
+             gof_map = c("nobs", "r.squared"),
+             title = "Summary of Regressions 1-3")
+
+models = list(reg4, reg5)
+modelsummary(models,
+             fmt = fmt_decimal(digits = 3, pdigits = 3),
+             stars = T,
+             vcov = "robust",
+             gof_map = c("nobs", "r.squared"),
+             title = "Summary of Regressions 4-5")
